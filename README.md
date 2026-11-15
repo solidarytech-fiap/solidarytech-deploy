@@ -1,0 +1,2 @@
+# solidarytech-deploy
+solidarytech deploy
