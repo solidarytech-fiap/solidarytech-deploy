@@ -1,0 +1,78 @@
+# Alertas operacionais (sintomas e causas) - complementam os alertas de SLO.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: solidarytech-operational
+  labels:
+    release: kube-prometheus-stack
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  groups:
+    - name: solidarytech-golden-signals
+      rules:
+        - alert: ServiceHighErrorRate
+          expr: |
+            sum by (service) (rate(http_requests_total{code=~"5..",route!="/admin/chaos"}[5m]))
+            / clamp_min(sum by (service) (rate(http_requests_total{route!="/admin/chaos"}[5m])), 1e-9) > 0.05
+          for: 3m
+          labels: { severity: critical }
+          annotations:
+            summary: "{{ $labels.service }}: mais de 5% de respostas 5xx"
+            description: "Taxa de erro atual: {{ $value | humanizePercentage }}"
+        - alert: ServiceHighLatencyP95
+          expr: |
+            histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[5m]))) > 0.3
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $labels.service }}: latencia p95 acima de 300ms"
+            description: "p95 atual: {{ $value | humanizeDuration }}"
+        - alert: ServiceDown
+          expr: sum by (service) (up{namespace="solidarytech"}) == 0
+          for: 2m
+          labels: { severity: critical }
+          annotations:
+            summary: "{{ $labels.service }} sem nenhuma instancia respondendo ao scrape"
+        - alert: DonationNoReplicasAvailable
+          expr: kube_deployment_status_replicas_available{namespace="solidarytech",deployment="donation-service"} < 1
+          for: 1m
+          labels: { severity: critical, service: donation-service }
+          annotations:
+            summary: "donation-service sem replicas disponiveis - doacoes paradas"
+        - alert: SQSPublishFailures
+          expr: increase(sqs_publish_total{result="failure"}[10m]) > 0
+          labels: { severity: warning, service: donation-service }
+          annotations:
+            summary: "Eventos de doacao falhando ao publicar no SQS"
+    - name: solidarytech-platform
+      rules:
+        - alert: PodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="solidarytech"}[15m]) > 3
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $labels.pod }} reiniciando repetidamente"
+        - alert: ContainerNearMemoryLimit
+          expr: |
+            max by (namespace, pod, container) (container_memory_working_set_bytes{namespace="solidarytech",container!=""})
+            / max by (namespace, pod, container) (kube_pod_container_resource_limits{namespace="solidarytech",resource="memory"}) > 0.9
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $labels.container }} usando mais de 90% do limite de memoria (risco de OOMKill / revisar rightsizing)"
+        - alert: DRBackupJobFailed
+          expr: kube_job_status_failed{namespace="solidarytech",job_name=~"pg-dump-.*"} > 0
+          labels: { severity: warning }
+          annotations:
+            summary: "Backup logico {{ $labels.job_name }} falhou - RPO em risco"
+        - alert: VeleroBackupFailed
+          expr: increase(velero_backup_failure_total[2h]) > 0
+          labels: { severity: warning }
+          annotations:
+            summary: "Backup do Velero falhou - RPO do cluster em risco"
+        - alert: VeleroNoRecentBackup
+          expr: time() - max(velero_backup_last_successful_timestamp{schedule="solidarytech-hourly"}) > 7200
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "Sem backup bem-sucedido do namespace solidarytech ha mais de 2h"

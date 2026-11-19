@@ -1,0 +1,76 @@
+name: Install ArgoCD + App-of-Apps
+
+# Disparado ao final do "Terraform Apply" (solidarytech-app) ou manualmente.
+# Unica operacao imperativa no cluster: instalar o ArgoCD e aplicar a raiz.
+# Todo o resto e entregue pelo ArgoCD a partir deste repositorio (GitOps).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CLUSTER_NAME: solidarytech-eks
+  AWS_REGION: us-east-1
+  ARGOCD_CHART_VERSION: 10.11.6
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: azure/setup-helm@v4
+
+      - name: kubeconfig
+        run: |
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+          kubectl wait --for=condition=Ready nodes --all --timeout=10m
+          kubectl get nodes -o wide
+
+      - name: Helm install argo-cd
+        run: |
+          helm repo add argo https://argoproj.github.io/argo-helm
+          helm repo update
+          helm upgrade --install argocd argo/argo-cd \
+            --namespace argocd --create-namespace \
+            --version "$ARGOCD_CHART_VERSION" \
+            -f k8s/argocd/values.yaml \
+            --wait --timeout 15m
+
+      - name: Aplicar App-of-Apps (root)
+        run: kubectl apply -f k8s/root-app.yaml
+
+      - name: Aguardar Applications (ate 20 min)
+        run: |
+          for i in $(seq 1 40); do
+            kubectl get applications -n argocd \
+              -o custom-columns='APP:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status' || true
+            pending=$(kubectl get applications -n argocd -o json \
+              | jq '[.items[] | select(.status.health.status != "Healthy")] | length')
+            [ "$pending" = "0" ] && { echo "Todas as Applications Healthy"; break; }
+            echo "--- aguardando $pending Applications (tentativa $i/40)"; sleep 30
+          done
+
+      - name: Resumo (URLs)
+        if: always()
+        run: |
+          ARGO=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || true)
+          ING=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || true)
+          {
+            echo "### Acessos"
+            echo "- ArgoCD: http://$ARGO (user admin; senha: \`kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d\`)"
+            echo "- API publica: http://$ING/donation/health"
+            echo "- Grafana: \`kubectl -n observability port-forward svc/kube-prometheus-stack-grafana 3000:80\` (senha no SSM /solidarytech/prod/observability/grafana-admin)"
+            echo
+            echo '```'
+            kubectl get applications -n argocd -o custom-columns='APP:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

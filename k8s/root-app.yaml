@@ -1,0 +1,23 @@
+# Raiz do App-of-Apps. Aplicada UMA vez pelo workflow argocd-install.yml.
+# Tudo o mais (plataforma, observabilidade, servicos, DR) e declarado em
+# k8s/apps/ e sincronizado automaticamente a partir do Git.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/solidarytech-fiap/solidarytech-deploy.git
+    targetRevision: main
+    path: k8s/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

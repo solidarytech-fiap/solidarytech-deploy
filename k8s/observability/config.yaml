@@ -1,0 +1,32 @@
+# Datasource Loki (Grafana sidecar) e credenciais do Grafana (SSM).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource-loki
+  labels:
+    grafana_datasource: "1"
+data:
+  loki.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        uid: loki
+        type: loki
+        access: proxy
+        url: http://loki-stack.observability.svc:3100
+        jsonData:
+          maxLines: 1000
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: grafana-admin
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  refreshInterval: 1h
+  secretStoreRef: { kind: ClusterSecretStore, name: aws-ssm }
+  target: { name: grafana-admin }
+  data:
+    - { secretKey: admin-user, remoteRef: { key: /solidarytech/prod/observability/grafana-admin, property: username } }
+    - { secretKey: admin-password, remoteRef: { key: /solidarytech/prod/observability/grafana-admin, property: password } }

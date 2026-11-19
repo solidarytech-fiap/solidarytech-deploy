@@ -1,0 +1,25 @@
+# O chart opentelemetry-collector (0.173.x) nao expoe o bloco serviceMonitor
+# nos values. Criamos aqui o ServiceMonitor que o kube-prometheus-stack pega
+# (via label release=kube-prometheus-stack) para scrape da porta "prometheus"
+# (8889), onde o exporter prometheus do collector converte as metricas OTLP
+# das aplicacoes em formato Prometheus.
+#
+# Sem este ServiceMonitor, os paineis de latencia/trafego baseados em
+# metricas OTel ficam vazios (Watchdog e Datadog seguem funcionando porque
+# recebem do collector diretamente).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: otel-collector
+  labels:
+    release: kube-prometheus-stack
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: opentelemetry-collector
+  endpoints:
+    - port: prometheus
+      path: /metrics
+      interval: 30s

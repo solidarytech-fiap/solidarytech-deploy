@@ -1,0 +1,108 @@
+name: Self-Healing (rollout restart)
+
+# Automacao de resposta a incidente (reduz MTTR):
+#   Datadog monitor -> webhook -> repository_dispatch -> este workflow
+# Valida o payload, reinicia o Deployment afetado, verifica o rollout e
+# registra a evidencia no resumo do job (linha do tempo do incidente).
+on:
+  repository_dispatch:
+    types: [datadog-alert]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Servico (ngo-service, donation-service, volunteer-service)"
+        required: true
+        default: donation-service
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-healing-${{ github.event.client_payload.service || inputs.service }}
+  cancel-in-progress: false
+
+env:
+  NAMESPACE: solidarytech
+  CLUSTER_NAME: solidarytech-eks
+  AWS_REGION: us-east-1
+
+jobs:
+  heal:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Contexto do alerta
+        id: ctx
+        env:
+          # Valores externos via env (evita injecao de comando no shell).
+          P_SERVICE: ${{ github.event.client_payload.service || inputs.service }}
+          P_ALERT: ${{ github.event.client_payload.alert_name || 'manual' }}
+          P_URL: ${{ github.event.client_payload.alert_url || 'manual' }}
+          P_TRANSITION: ${{ github.event.client_payload.transition || 'Triggered' }}
+        run: |
+          # Remove prefixo "service:" se vier na tag.
+          SVC="${P_SERVICE#service:}"
+          echo "service=$SVC" >> "$GITHUB_OUTPUT"
+          echo "transition=$P_TRANSITION" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Incidente - acao automatica"
+            echo "| Campo | Valor |"; echo "|---|---|"
+            echo "| Inicio da automacao | $(date -u +%FT%TZ) |"
+            echo "| Servico | \`$SVC\` |"
+            echo "| Alerta | $P_ALERT |"
+            echo "| Transicao | $P_TRANSITION |"
+            echo "| Link | $P_URL |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Ignorar recuperacao
+        if: steps.ctx.outputs.transition == 'Recovered'
+        run: echo "Alerta recuperado - nenhuma acao." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validar servico (allowlist)
+        if: steps.ctx.outputs.transition != 'Recovered'
+        env:
+          SVC: ${{ steps.ctx.outputs.service }}
+        run: |
+          case "$SVC" in
+            ngo-service|donation-service|volunteer-service) echo "ok: $SVC" ;;
+            *) echo "::error::servico fora da allowlist: '$SVC'"; exit 1 ;;
+          esac
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.ctx.outputs.transition != 'Recovered'
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Rollout restart + verificacao
+        if: steps.ctx.outputs.transition != 'Recovered'
+        env:
+          SVC: ${{ steps.ctx.outputs.service }}
+        run: |
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+          echo "--- antes"; kubectl -n "$NAMESPACE" get deploy,pods -l app="$SVC" -o wide
+          START=$(date +%s)
+          kubectl -n "$NAMESPACE" rollout restart deployment/"$SVC"
+          kubectl -n "$NAMESPACE" rollout status deployment/"$SVC" --timeout=5m
+          END=$(date +%s)
+          echo "--- depois"; kubectl -n "$NAMESPACE" get deploy,pods -l app="$SVC" -o wide
+          {
+            echo "| Rollout concluido | $(date -u +%FT%TZ) ($((END-START))s) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verificacao funcional (health via Ingress)
+        if: steps.ctx.outputs.transition != 'Recovered'
+        env:
+          SVC: ${{ steps.ctx.outputs.service }}
+        run: |
+          ING=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          PREFIX="${SVC%-service}"
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://$ING/$PREFIX/health" || true)
+            [ "$code" = "200" ] && { echo "| Health check | 200 OK |" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+            sleep 10
+          done
+          echo "| Health check | FALHOU - escalar para on-call |" >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::Servico nao recuperou apos o restart - escalar (docs/itsm.md)"
+          exit 1

@@ -1,0 +1,119 @@
+# Prometheus + Grafana + Alertmanager (Golden Metrics, SLO, alertas).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 65.1.1
+    helm:
+      releaseName: kube-prometheus-stack
+      values: |
+        prometheus:
+          prometheusSpec:
+            # Janela do SLO e 30d; sem volume persistente (custo), o historico
+            # reinicia se o pod for recriado. Datadog guarda o SLO de forma persistente.
+            retention: 30d
+            retentionSize: 6GB
+            scrapeInterval: 15s
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+            resources:
+              requests: { cpu: 150m, memory: 512Mi }
+              limits: { memory: 1536Mi }
+        alertmanager:
+          alertmanagerSpec:
+            resources:
+              requests: { cpu: 10m, memory: 32Mi }
+              limits: { memory: 64Mi }
+          config:
+            route:
+              receiver: "null"
+              group_by: [alertname, service, severity]
+              group_wait: 30s
+              group_interval: 5m
+              repeat_interval: 4h
+              routes:
+                - receiver: "null"
+                  matchers:
+                - alertname="Watchdog"
+            receivers:
+              - name: "null"
+        grafana:
+          enabled: true
+          admin:
+            existingSecret: grafana-admin # External Secrets <- SSM
+            userKey: admin-user
+            passwordKey: admin-password
+          sidecar:
+            dashboards:
+              enabled: true
+              label: grafana_dashboard
+              labelValue: "1"
+              searchNamespace: ALL
+              folderAnnotation: grafana_folder
+              provider:
+                foldersFromFilesStructure: true
+            datasources:
+              enabled: true
+              label: grafana_datasource
+              labelValue: "1"
+              searchNamespace: ALL
+              defaultDatasourceEnabled: true
+              uid: prometheus
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }
+        prometheusOperator:
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { memory: 192Mi }
+        kube-state-metrics:
+          resources:
+            requests: { cpu: 10m, memory: 48Mi }
+            limits: { memory: 128Mi }
+        prometheus-node-exporter:
+          resources:
+            requests: { cpu: 10m, memory: 24Mi }
+            limits: { memory: 64Mi }
+        # Componentes do control plane gerenciado (EKS) nao sao acessiveis.
+        kubeControllerManager: { enabled: false }
+        kubeScheduler: { enabled: false }
+        kubeEtcd: { enabled: false }
+        kubeProxy: { enabled: false }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/status/terminatingReplicas]
+    - group: apps
+      kind: StatefulSet
+      jsonPointers: [/status/terminatingReplicas]
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
+      - ServerSideApply=true
+    # Retry resolve a ordem de CRDs entre Applications (ex.: ServiceMonitor
+    # criado antes do kube-prometheus-stack instalar a CRD).
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

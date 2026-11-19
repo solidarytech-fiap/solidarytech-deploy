@@ -1,0 +1,65 @@
+# Ingress controller -> cria o Load Balancer publico da AWS.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ingress-nginx
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://kubernetes.github.io/ingress-nginx
+    chart: ingress-nginx
+    targetRevision: 4.12.1
+    helm:
+      releaseName: ingress-nginx
+      values: |
+        controller:
+          replicaCount: 2
+          service:
+            type: LoadBalancer
+          config:
+            # Logs de acesso em JSON (Loki) com latencia upstream.
+            log-format-escape-json: "true"
+            log-format-upstream: '{"time":"$time_iso8601","remote_addr":"$remote_addr","method":"$request_method","path":"$uri","status":$status,"request_time":$request_time,"upstream_time":"$upstream_response_time","service":"$service_name"}'
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
+              additionalLabels:
+                release: kube-prometheus-stack
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { memory: 256Mi }
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ingress-nginx
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/status/terminatingReplicas]
+    - group: apps
+      kind: StatefulSet
+      jsonPointers: [/status/terminatingReplicas]
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
+    # Retry resolve a ordem de CRDs entre Applications (ex.: ServiceMonitor
+    # criado antes do kube-prometheus-stack instalar a CRD).
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

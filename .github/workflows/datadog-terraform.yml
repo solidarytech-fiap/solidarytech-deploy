@@ -1,0 +1,38 @@
+name: Datadog Terraform (monitores, Watchdog, SLOs, webhook)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        options: [plan, apply, destroy]
+        default: plan
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform/datadog
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+      - run: terraform init -input=false -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
+      - run: terraform validate
+      - if: inputs.action != 'destroy'
+        run: terraform plan -input=false -out=tfplan
+      - if: inputs.action == 'apply'
+        run: terraform apply -input=false -auto-approve tfplan
+      - if: inputs.action == 'destroy'
+        run: terraform destroy -input=false -auto-approve
+      - if: inputs.action == 'apply'
+        run: terraform output -no-color >> "$GITHUB_STEP_SUMMARY"

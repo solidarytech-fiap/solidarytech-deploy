@@ -1,0 +1,154 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: volunteer-service
+  labels:
+    app: volunteer-service
+spec:
+  # replicas omitido: controlado pelo HPA (evita OutOfSync no ArgoCD).
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: volunteer-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: volunteer-service
+    spec:
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: volunteer-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: volunteer-service
+          image: volunteer-service
+          ports:
+            - name: http
+              containerPort: 8083
+          envFrom:
+            - secretRef:
+                name: app-config # AWS_REGION, AWS_DYNAMODB_TABLE, AWS_DYNAMODB_NGO_INDEX
+          env:
+            - name: PORT
+              value: "8083"
+            # OpenTelemetry (auto-instrumentacao via opentelemetry-instrument)
+            - name: OTEL_SERVICE_NAME
+              value: volunteer-service
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector-opentelemetry-collector.observability.svc:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            - name: OTEL_TRACES_EXPORTER
+              value: otlp_proto_http
+            - name: OTEL_METRICS_EXPORTER
+              value: none # metricas via /metrics (Prometheus)
+            - name: OTEL_LOGS_EXPORTER
+              value: none # logs via stdout (Promtail/Loki)
+            - name: OTEL_PYTHON_LOG_CORRELATION
+              value: "true"
+            - name: OTEL_PYTHON_FLASK_EXCLUDED_URLS
+              value: "health,ready,metrics"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment=prod,service.namespace=solidarytech,team=ngo-core
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+            failureThreshold: 2
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          # Rightsizing: valores revisados no overlay prod (docs/finops.md).
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp # gunicorn worker heartbeat
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: volunteer-service
+  labels:
+    app: volunteer-service
+spec:
+  selector:
+    app: volunteer-service
+  ports:
+    - name: http
+      port: 8083
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: volunteer-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: volunteer-service
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: volunteer-service
+  labels:
+    app: volunteer-service
+    release: kube-prometheus-stack
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  selector:
+    matchLabels:
+      app: volunteer-service
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

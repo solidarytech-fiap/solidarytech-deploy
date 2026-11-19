@@ -1,0 +1,48 @@
+# metrics-server: base do HPA e do kubectl top (rightsizing).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metrics-server
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://kubernetes-sigs.github.io/metrics-server/
+    chart: metrics-server
+    targetRevision: 3.14.0
+    helm:
+      releaseName: metrics-server
+      values: |
+        resources:
+          requests: { cpu: 20m, memory: 48Mi }
+          limits: { memory: 128Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/status/terminatingReplicas]
+    - group: apps
+      kind: StatefulSet
+      jsonPointers: [/status/terminatingReplicas]
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
+    # Retry resolve a ordem de CRDs entre Applications (ex.: ServiceMonitor
+    # criado antes do kube-prometheus-stack instalar a CRD).
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

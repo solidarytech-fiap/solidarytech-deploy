@@ -1,0 +1,63 @@
+# Loki + Promtail: logs centralizados de todos os containers.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki-stack
+    targetRevision: 2.10.2
+    helm:
+      releaseName: loki-stack
+      values: |
+        loki:
+          enabled: true
+          persistence:
+            enabled: false
+          config:
+            table_manager:
+              retention_deletes_enabled: true
+              retention_period: 168h
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+        promtail:
+          enabled: true
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { memory: 128Mi }
+        grafana: { enabled: false }
+        prometheus: { enabled: false }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/status/terminatingReplicas]
+    - group: apps
+      kind: StatefulSet
+      jsonPointers: [/status/terminatingReplicas]
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
+    # Retry resolve a ordem de CRDs entre Applications (ex.: ServiceMonitor
+    # criado antes do kube-prometheus-stack instalar a CRD).
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

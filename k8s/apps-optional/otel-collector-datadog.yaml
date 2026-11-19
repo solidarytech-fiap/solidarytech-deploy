@@ -1,0 +1,197 @@
+# OTel Collector COM Datadog (semana 7 - trial de 14 dias).
+# Ativacao: git mv -f k8s/apps-optional/otel-collector-datadog.yaml k8s/apps/12-otel-collector.yaml
+#           git mv k8s/apps-optional/14-datadog-secret.yaml k8s/apps/
+# Pre-requisito: SSM /solidarytech/prod/datadog/api-key (SecureString) e /site (String).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-collector
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: '-3'
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+    chart: opentelemetry-collector
+    targetRevision: 0.173.1
+    helm:
+      releaseName: otel-collector
+      values: |
+        image:
+          repository: otel/opentelemetry-collector-contrib
+          tag: 0.160.0
+        mode: deployment
+        replicaCount: 1
+        rewriteDeprecatedComponentNames: false
+        presets:
+          kubernetesAttributes:
+            enabled: true
+        ports:
+          otlp:
+            enabled: true
+            containerPort: 4317
+            servicePort: 4317
+            protocol: TCP
+          otlp-http:
+            enabled: true
+            containerPort: 4318
+            servicePort: 4318
+            protocol: TCP
+          metrics:
+            enabled: false
+          prometheus:
+            enabled: true
+            containerPort: 8889
+            servicePort: 8889
+            protocol: TCP
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 384Mi
+        config:
+          receivers:
+            otlp:
+              protocols:
+                grpc:
+                  endpoint: 0.0.0.0:4317
+                http:
+                  endpoint: 0.0.0.0:4318
+          processors:
+            memory_limiter:
+              check_interval: 1s
+              limit_mib: 300
+              spike_limit_mib: 80
+            batch:
+              send_batch_size: 1024
+              timeout: 10s
+            resource:
+              attributes:
+              - key: deployment.environment
+                value: prod
+                action: upsert
+              - key: k8s.cluster.name
+                value: solidarytech-eks
+                action: upsert
+              - key: team
+                value: ngo-core
+                action: upsert
+            attributes/peer_service:
+              actions:
+              - key: peer.service
+                from_attribute: http.host
+                action: insert
+              - key: peer.service
+                from_attribute: net.peer.name
+                action: insert
+              - key: peer.service
+                from_attribute: server.address
+                action: insert
+          connectors:
+            spanmetrics:
+              histogram:
+                explicit:
+                  buckets:
+                  - 10ms
+                  - 50ms
+                  - 100ms
+                  - 300ms
+                  - 500ms
+                  - 1s
+                  - 2s
+              dimensions:
+              - name: http.response.status_code
+            datadog/connector:
+              traces:
+                compute_stats_by_span_kind: true
+                peer_tags_aggregation: true
+                compute_top_level_by_span_kind: true
+          exporters:
+            prometheus:
+              endpoint: 0.0.0.0:8889
+              resource_to_telemetry_conversion:
+                enabled: true
+            debug:
+              verbosity: basic
+            datadog:
+              api:
+                key: ${env:DD_API_KEY}
+                site: ${env:DD_SITE}
+              hostname_source: config_or_system
+          service:
+            pipelines:
+              traces:
+                receivers:
+                - otlp
+                processors:
+                - memory_limiter
+                - k8sattributes
+                - resource
+                - attributes/peer_service
+                - batch
+                exporters:
+                - datadog
+                - datadog/connector
+                - spanmetrics
+              metrics:
+                receivers:
+                - otlp
+                - spanmetrics
+                - datadog/connector
+                processors:
+                - memory_limiter
+                - k8sattributes
+                - resource
+                - batch
+                exporters:
+                - datadog
+                - prometheus
+              logs:
+                receivers:
+                - otlp
+                processors:
+                - memory_limiter
+                - batch
+                exporters:
+                - datadog
+        extraEnvs:
+        - name: DD_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: datadog-secret
+              key: api-key
+        - name: DD_SITE
+          valueFrom:
+            secretKeyRef:
+              name: datadog-secret
+              key: site
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  ignoreDifferences:
+  - group: apps
+    kind: Deployment
+    jsonPointers:
+    - /status/terminatingReplicas
+  - group: apps
+    kind: StatefulSet
+    jsonPointers:
+    - /status/terminatingReplicas
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - RespectIgnoreDifferences=true
+    - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

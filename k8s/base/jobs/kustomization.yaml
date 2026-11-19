@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - db-init.yaml
+configMapGenerator:
+  - name: ngo-init-sql
+    files: [init.sql=sql/ngo.sql]
+  - name: donation-init-sql
+    files: [init.sql=sql/donation.sql]
+generatorOptions:
+  disableNameSuffixHash: true
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"

@@ -1,0 +1,487 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-finops
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: SolidaryTech
+data:
+  finops.json: |
+    {
+      "uid": "solidarytech-finops",
+      "title": "SolidaryTech - FinOps (Rightsizing)",
+      "tags": [
+        "solidarytech",
+        "finops"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "30s",
+      "time": {
+        "from": "now-24h",
+        "to": "now"
+      },
+      "editable": true,
+      "templating": {
+        "list": []
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "text",
+          "title": "",
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 4
+          },
+          "options": {
+            "mode": "markdown",
+            "content": "## FinOps - Rightsizing e alocacao de custo\nPreco de referencia: t3.medium on-demand us-east-1 = US$ 0.0416/h (2 vCPU, 4 GiB). Custo alocado por namespace = participacao nos *requests* x custo dos nodes. Metodologia: `docs/finops.md`."
+          }
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Nodes no cluster",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 6,
+            "h": 5
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "value"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "count(kube_node_info)",
+              "instant": true,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Custo estimado dos nodes (US$/mes)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 4,
+            "w": 6,
+            "h": 5
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "value"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "count(kube_node_info) * 0.0416 * 730",
+              "instant": true,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "CPU requisitada / alocavel",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 4,
+            "w": 6,
+            "h": 5
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "decimals": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "value"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(kube_pod_container_resource_requests{resource=\"cpu\"}) / sum(kube_node_status_allocatable{resource=\"cpu\"})",
+              "instant": true,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "CPU usada / requisitada (eficiencia)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 4,
+            "w": 6,
+            "h": 5
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "decimals": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 0.3
+                  },
+                  {
+                    "color": "green",
+                    "value": 0.6
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "value"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(container_cpu_usage_seconds_total{container!=\"\"}[5m])) / sum(kube_pod_container_resource_requests{resource=\"cpu\"})",
+              "instant": true,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Custo alocado por namespace (US$/mes, por request de CPU)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 9,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (kube_pod_container_resource_requests{resource=\"cpu\"}) / scalar(sum(kube_node_status_allocatable{resource=\"cpu\"})) * scalar(count(kube_node_info)) * 0.0416 * 730",
+              "legendFormat": "{{namespace}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Ociosidade de CPU por container (request - uso p95 1h)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 9,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (container) (kube_pod_container_resource_requests{namespace=\"solidarytech\",resource=\"cpu\"}) - sum by (container) (quantile_over_time(0.95, rate(container_cpu_usage_seconds_total{namespace=\"solidarytech\",container!=\"\"}[5m])[1h:1m]))",
+              "legendFormat": "{{container}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Memoria: request vs uso (solidarytech)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 17,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (container) (kube_pod_container_resource_requests{namespace=\"solidarytech\",resource=\"memory\"})",
+              "legendFormat": "request {{container}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (container) (container_memory_working_set_bytes{namespace=\"solidarytech\",container!=\"\"})",
+              "legendFormat": "uso {{container}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "CPU: request vs uso (solidarytech)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 17,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (container) (kube_pod_container_resource_requests{namespace=\"solidarytech\",resource=\"cpu\"})",
+              "legendFormat": "request {{container}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (container) (rate(container_cpu_usage_seconds_total{namespace=\"solidarytech\",container!=\"\"}[5m]))",
+              "legendFormat": "uso {{container}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        }
+      ],
+      "annotations": {
+        "list": []
+      }
+    }

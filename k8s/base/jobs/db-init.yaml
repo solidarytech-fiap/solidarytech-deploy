@@ -1,0 +1,77 @@
+# Inicializacao dos schemas no RDS. Hook de Sync do ArgoCD: roda a cada
+# sincronizacao (SQL idempotente), recriado a cada vez.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ngo-db-init
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70 # usuario postgres da imagem alpine
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: psql
+          image: postgres:16-alpine
+          command: ["psql", "-v", "ON_ERROR_STOP=1", "-f", "/sql/init.sql"]
+          envFrom:
+            - secretRef: { name: ngo-db } # PGHOST, PGDATABASE, PGUSER, PGPASSWORD
+          env:
+            - { name: PGSSLMODE, value: require }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: sql, mountPath: /sql }
+      volumes:
+        - name: sql
+          configMap: { name: ngo-init-sql }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: donation-db-init
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: psql
+          image: postgres:16-alpine
+          command: ["psql", "-v", "ON_ERROR_STOP=1", "-f", "/sql/init.sql"]
+          envFrom:
+            - secretRef: { name: donation-db }
+          env:
+            - { name: PGSSLMODE, value: require }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: sql, mountPath: /sql }
+      volumes:
+        - name: sql
+          configMap: { name: donation-init-sql }

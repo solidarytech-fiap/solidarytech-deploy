@@ -1,0 +1,162 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: donation-service
+  labels:
+    app: donation-service
+    tier: critical # hot path
+spec:
+  # replicas omitido: controlado pelo HPA (evita OutOfSync no ArgoCD).
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: donation-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0 # zero downtime no caminho critico
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: donation-service
+        tier: critical
+    spec:
+      terminationGracePeriodSeconds: 30
+      # Espalha replicas entre nodes: a perda de 1 node nao derruba doacoes.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: donation-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: donation-service
+          image: donation-service
+          ports:
+            - name: http
+              containerPort: 8082
+          envFrom:
+            - secretRef:
+                name: app-config # AWS_REGION, AWS_SQS_URL (External Secrets <- SSM)
+          env:
+            - name: PORT
+              value: "8082"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: donation-db
+                  key: DATABASE_URL
+            - name: CHAOS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: donation-chaos
+                  key: CHAOS_TOKEN
+            - name: OTEL_SERVICE_NAME
+              value: donation-service
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector-opentelemetry-collector.observability.svc:4318
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment=prod,service.namespace=solidarytech,team=ngo-core
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+            failureThreshold: 2
+          lifecycle:
+            # Da tempo do Service/Ingress removerem o pod antes do SIGTERM.
+            preStop:
+              sleep:
+                seconds: 5
+          # Rightsizing: valores revisados no overlay prod (docs/finops.md).
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: donation-service
+  labels:
+    app: donation-service
+spec:
+  selector:
+    app: donation-service
+  ports:
+    - name: http
+      port: 8082
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: donation-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: donation-service
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0 # picos de acesso (TV): escala rapido
+    scaleDown:
+      stabilizationWindowSeconds: 300
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: donation-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: donation-service
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: donation-service
+  labels:
+    app: donation-service
+    release: kube-prometheus-stack
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  selector:
+    matchLabels:
+      app: donation-service
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

@@ -1,0 +1,42 @@
+# Schedules do Velero (backups agendados).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: velero-config
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/solidarytech-fiap/solidarytech-deploy.git
+    targetRevision: main
+    path: k8s/dr/velero
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: velero
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/status/terminatingReplicas]
+    - group: apps
+      kind: StatefulSet
+      jsonPointers: [/status/terminatingReplicas]
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
+    # Retry resolve a ordem de CRDs entre Applications (ex.: ServiceMonitor
+    # criado antes do kube-prometheus-stack instalar a CRD).
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

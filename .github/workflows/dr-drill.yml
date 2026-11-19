@@ -1,0 +1,84 @@
+name: DR Drill (Velero backup -> perda -> restore)
+
+# Exercicio de Disaster Recovery para evidencia (video/relatorio):
+#  1. backup on-demand do namespace solidarytech -> S3 us-west-2
+#  2. pausa o auto-sync do ArgoCD (senao o GitOps recria antes do restore)
+#  3. simula desastre: apaga o namespace inteiro
+#  4. velero restore + validacao + mede o tempo de recuperacao (RTO real)
+#  5. reativa o ArgoCD
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Digite "drill" para apagar e restaurar o namespace solidarytech'
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CLUSTER_NAME: solidarytech-eks
+  AWS_REGION: us-east-1
+  NS: solidarytech
+  VELERO_VERSION: v1.15.0
+
+jobs:
+  drill:
+    if: inputs.confirm == 'drill'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Ferramentas
+        run: |
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+          curl -sSL "https://github.com/vmware-tanzu/velero/releases/download/${VELERO_VERSION}/velero-${VELERO_VERSION}-linux-amd64.tar.gz" | tar xz
+          sudo mv velero-*/velero /usr/local/bin/
+          velero backup-location get
+
+      - name: 1. Backup on-demand
+        run: |
+          B="drill-$(date +%Y%m%d-%H%M%S)"; echo "BACKUP=$B" >> "$GITHUB_ENV"
+          velero backup create "$B" --include-namespaces "$NS" --wait
+          velero backup describe "$B"
+          echo "| Backup | \`$B\` concluido $(date -u +%T) |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 2. Pausar auto-sync do ArgoCD
+        run: |
+          kubectl -n argocd patch application root --type merge -p '{"spec":{"syncPolicy":null}}'
+          kubectl -n argocd patch application solidarytech --type merge -p '{"spec":{"syncPolicy":null}}'
+
+      - name: 3. Desastre simulado (delete namespace)
+        run: |
+          echo "DISASTER_TS=$(date +%s)" >> "$GITHUB_ENV"
+          kubectl delete namespace "$NS" --wait=true --timeout=5m
+          echo "| Desastre | namespace apagado $(date -u +%T) |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 4. Restore + validacao
+        run: |
+          velero restore create "restore-$BACKUP" --from-backup "$BACKUP" --wait
+          velero restore describe "restore-$BACKUP"
+          kubectl -n "$NS" rollout status deploy/donation-service --timeout=10m
+          kubectl -n "$NS" rollout status deploy/ngo-service --timeout=10m
+          kubectl -n "$NS" rollout status deploy/volunteer-service --timeout=10m
+          ING=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          for i in $(seq 1 30); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' "http://$ING/donation/health")" = "200" ] && break; sleep 5
+          done
+          RTO=$(( $(date +%s) - DISASTER_TS ))
+          kubectl -n "$NS" get pods
+          echo "| Restore | servicos saudaveis $(date -u +%T) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **RTO medido** | **${RTO}s** (objetivo PCN: 1h) |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 5. Reativar ArgoCD (GitOps volta a ser a fonte da verdade)
+        if: always()
+        run: |
+          kubectl -n argocd patch application root --type merge \
+            -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+          # A raiz re-sincroniza as Applications filhas com a syncPolicy do Git.
+          kubectl -n argocd get applications

@@ -1,0 +1,38 @@
+name: Manifests CI (kustomize, kubeconform, Trivy config)
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths: ["k8s/**", "terraform/**", ".github/workflows/manifests-ci.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar kustomize e kubeconform
+        run: |
+          curl -sSL https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz | tar xz -C /usr/local/bin
+          curl -sSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz -C /usr/local/bin
+      - name: kustomize build + kubeconform
+        run: |
+          KC="kubeconform -strict -summary -ignore-missing-schemas -schema-location default -schema-location https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+          for d in k8s/overlays/prod k8s/observability k8s/platform k8s/dr/velero k8s/observability-datadog; do
+            echo "== $d"; kustomize build "$d" | $KC -
+          done
+          $KC k8s/apps/*.yaml k8s/apps-optional/*.yaml k8s/root-app.yaml
+      - name: Requests/limits obrigatorios (politica de rightsizing)
+        run: |
+          pip install --quiet pyyaml
+          kustomize build k8s/overlays/prod | python3 .github/scripts/check-resources.py
+      - name: Trivy config (misconfig K8s/Terraform)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: "0"

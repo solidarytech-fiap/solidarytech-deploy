@@ -1,0 +1,64 @@
+# Values do chart argo-cd (instalado por .github/workflows/argocd-install.yml).
+global:
+  domain: ""
+
+server:
+  service:
+    type: LoadBalancer
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+
+controller:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 768Mi }
+
+repoServer:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+applicationSet:
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+notifications:
+  enabled: false
+
+dex:
+  enabled: false
+
+redis:
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+configs:
+  params:
+    server.insecure: true # TLS terminado fora (ambiente academico)
+  cm:
+    # Polling do Git a cada 60s (default 180s): deploy mais rapido na demo.
+    timeout.reconciliation: 60s
+    # Campos de status novos (k8s 1.33+) desconhecidos pelo gitops-engine.
+    resource.customizations.ignoreDifferences.apps_Deployment: |
+      jsonPointers:
+      - /status/terminatingReplicas
+    resource.customizations.ignoreDifferences.apps_StatefulSet: |
+      jsonPointers:
+      - /status/terminatingReplicas
+    resource.customizations.ignoreDifferences.apps_ReplicaSet: |
+      jsonPointers:
+      - /status/terminatingReplicas
+    # ExternalSecret: o controller preenche defaults; nao gerar OutOfSync.
+    resource.customizations.ignoreDifferences.external-secrets.io_ExternalSecret: |
+      jqPathExpressions:
+      - .spec.data[]?.remoteRef.conversionStrategy
+      - .spec.data[]?.remoteRef.decodingStrategy
+      - .spec.data[]?.remoteRef.metadataPolicy
+      - .spec.dataFrom[]?.extract.conversionStrategy
+      - .spec.dataFrom[]?.extract.decodingStrategy
+      - .spec.dataFrom[]?.extract.metadataPolicy
+      - .spec.target.creationPolicy
+      - .spec.target.deletionPolicy

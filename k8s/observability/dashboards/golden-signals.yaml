@@ -1,0 +1,777 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-golden-signals
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: SolidaryTech
+data:
+  golden-signals.json: |
+    {
+      "uid": "solidarytech-golden",
+      "title": "SolidaryTech - Golden Signals",
+      "tags": [
+        "solidarytech",
+        "golden-metrics"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "30s",
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "editable": true,
+      "templating": {
+        "list": [
+          {
+            "name": "service",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "label": "Servico",
+            "query": {
+              "query": "label_values(http_requests_total{namespace=\"solidarytech\"}, service)",
+              "refId": "q"
+            },
+            "definition": "label_values(http_requests_total{namespace=\"solidarytech\"}, service)",
+            "includeAll": true,
+            "multi": true,
+            "current": {
+              "text": "All",
+              "value": "$__all"
+            },
+            "refresh": 2
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "row",
+          "title": "Trafego e Erros",
+          "collapsed": false,
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 1
+          },
+          "panels": []
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "Trafego (req/s) por servico",
+          "description": "Golden Metric: Traffic",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 1,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (service) (rate(http_requests_total{service=~\"$service\",route!=\"/admin/chaos\"}[1m]))",
+              "legendFormat": "{{service}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "Taxa de erros 5xx (%)",
+          "description": "Golden Metric: Errors",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 1,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "thresholdsStyle": {
+                  "mode": "line"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.05
+                  }
+                ]
+              },
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (service) (rate(http_requests_total{service=~\"$service\",route!=\"/admin/chaos\",code=~\"5..\"}[1m])) / clamp_min(sum by (service) (rate(http_requests_total{service=~\"$service\",route!=\"/admin/chaos\"}[1m])), 1e-9)",
+              "legendFormat": "{{service}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "row",
+          "title": "Latencia",
+          "collapsed": false,
+          "gridPos": {
+            "x": 0,
+            "y": 9,
+            "w": 24,
+            "h": 1
+          },
+          "panels": []
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Latencia p50 / p95 / p99",
+          "description": "Golden Metric: Latency (limiar do SLI: 300ms)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 10,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "thresholdsStyle": {
+                  "mode": "line"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.3
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.50, sum by (service, le) (rate(http_request_duration_seconds_bucket{service=~\"$service\",route!=\"/admin/chaos\"}[5m])))",
+              "legendFormat": "p50 {{service}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket{service=~\"$service\",route!=\"/admin/chaos\"}[5m])))",
+              "legendFormat": "p95 {{service}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.99, sum by (service, le) (rate(http_request_duration_seconds_bucket{service=~\"$service\",route!=\"/admin/chaos\"}[5m])))",
+              "legendFormat": "p99 {{service}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Respostas por codigo HTTP",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 10,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (service, code) (rate(http_requests_total{service=~\"$service\",route!=\"/admin/chaos\"}[1m]))",
+              "legendFormat": "{{service}} {{code}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "row",
+          "title": "Saturacao",
+          "collapsed": false,
+          "gridPos": {
+            "x": 0,
+            "y": 18,
+            "w": 24,
+            "h": 1
+          },
+          "panels": []
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Requisicoes em andamento",
+          "description": "Golden Metric: Saturation",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 19,
+            "w": 8,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (service) (http_requests_in_flight{service=~\"$service\"})",
+              "legendFormat": "{{service}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "CPU usada vs request (cores)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 8,
+            "y": 19,
+            "w": 8,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (container) (rate(container_cpu_usage_seconds_total{namespace=\"solidarytech\",container=~\".*-service\"}[5m]))",
+              "legendFormat": "uso {{container}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (container) (kube_pod_container_resource_requests{namespace=\"solidarytech\",resource=\"cpu\",container=~\".*-service\"})",
+              "legendFormat": "request {{container}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "type": "timeseries",
+          "title": "Memoria usada vs limit",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 16,
+            "y": 19,
+            "w": 8,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (container) (container_memory_working_set_bytes{namespace=\"solidarytech\",container=~\".*-service\"})",
+              "legendFormat": "uso {{container}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (container) (kube_pod_container_resource_limits{namespace=\"solidarytech\",resource=\"memory\",container=~\".*-service\"})",
+              "legendFormat": "limit {{container}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "type": "row",
+          "title": "Negocio e plataforma",
+          "collapsed": false,
+          "gridPos": {
+            "x": 0,
+            "y": 27,
+            "w": 24,
+            "h": 1
+          },
+          "panels": []
+        },
+        {
+          "id": 12,
+          "type": "timeseries",
+          "title": "Doacoes criadas por minuto",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 28,
+            "w": 8,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(donations_created_total[5m])) * 60",
+              "legendFormat": "doacoes/min",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "type": "timeseries",
+          "title": "Valor doado (R$/min)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 8,
+            "y": 28,
+            "w": 8,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyBRL",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(donations_amount_brl_total[5m])) * 60",
+              "legendFormat": "R$/min",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "type": "timeseries",
+          "title": "Publicacoes SQS",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 16,
+            "y": 28,
+            "w": 8,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (result) (rate(sqs_publish_total[5m]))",
+              "legendFormat": "{{result}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 15,
+          "type": "timeseries",
+          "title": "Replicas disponiveis (HPA)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 36,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "kube_deployment_status_replicas_available{namespace=\"solidarytech\"}",
+              "legendFormat": "{{deployment}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 16,
+          "type": "timeseries",
+          "title": "Restarts de containers (15m)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 36,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (container) (increase(kube_pod_container_status_restarts_total{namespace=\"solidarytech\"}[15m]))",
+              "legendFormat": "{{container}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        }
+      ],
+      "annotations": {
+        "list": []
+      }
+    }

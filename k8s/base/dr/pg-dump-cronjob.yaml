@@ -1,0 +1,123 @@
+# DR dos DADOS de doacao (complementa o Velero, que guarda o estado do cluster).
+# A cada 15 min: pg_dump do donation_db -> S3 em us-west-2 (outra regiao).
+# Define o RPO cross-region de 15 min do PCN (docs/pcn.md).
+# O ngo_db e copiado 1x por hora (dados menos volateis).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-dump-donation
+  labels: { app: pg-dump, dr: "true" }
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels: { app: pg-dump, dr: "true", db: donation }
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            fsGroup: 70
+            seccompProfile: { type: RuntimeDefault }
+          initContainers:
+            - name: dump
+              image: postgres:16-alpine
+              command: ["/bin/sh", "-c"]
+              args:
+                - pg_dump --format=custom --no-owner --file=/backup/donation_db.dump && ls -la /backup
+              envFrom: [{ secretRef: { name: donation-db } }]
+              env: [{ name: PGSSLMODE, value: require }]
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 250m, memory: 256Mi }
+              securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+              volumeMounts: [{ name: backup, mountPath: /backup }]
+          containers:
+            - name: upload
+              image: amazon/aws-cli:2.22.35
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -e
+                  KEY="postgres/donation_db/$(date -u +%Y/%m/%d)/donation_db-$(date -u +%Y%m%dT%H%M%SZ).dump"
+                  aws s3 cp /backup/donation_db.dump "s3://${BACKUP_BUCKET}/${KEY}" --region "${BACKUP_REGION}"
+                  aws s3 cp /backup/donation_db.dump "s3://${BACKUP_BUCKET}/postgres/donation_db/latest.dump" --region "${BACKUP_REGION}"
+                  echo "{\"msg\":\"backup enviado\",\"key\":\"${KEY}\"}"
+              envFrom: [{ secretRef: { name: dr-config } }] # BACKUP_BUCKET, BACKUP_REGION
+              env: [{ name: HOME, value: /tmp }]
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 250m, memory: 256Mi }
+              securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+              volumeMounts:
+                - { name: backup, mountPath: /backup }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - { name: backup, emptyDir: { sizeLimit: 1Gi } }
+            - { name: tmp, emptyDir: {} }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-dump-ngo
+  labels: { app: pg-dump, dr: "true" }
+spec:
+  schedule: "7 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels: { app: pg-dump, dr: "true", db: ngo }
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            fsGroup: 70
+            seccompProfile: { type: RuntimeDefault }
+          initContainers:
+            - name: dump
+              image: postgres:16-alpine
+              command: ["/bin/sh", "-c"]
+              args: ["pg_dump --format=custom --no-owner --file=/backup/ngo_db.dump"]
+              envFrom: [{ secretRef: { name: ngo-db } }]
+              env: [{ name: PGSSLMODE, value: require }]
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 250m, memory: 256Mi }
+              securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+              volumeMounts: [{ name: backup, mountPath: /backup }]
+          containers:
+            - name: upload
+              image: amazon/aws-cli:2.22.35
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -e
+                  KEY="postgres/ngo_db/$(date -u +%Y/%m/%d)/ngo_db-$(date -u +%Y%m%dT%H%M%SZ).dump"
+                  aws s3 cp /backup/ngo_db.dump "s3://${BACKUP_BUCKET}/${KEY}" --region "${BACKUP_REGION}"
+                  aws s3 cp /backup/ngo_db.dump "s3://${BACKUP_BUCKET}/postgres/ngo_db/latest.dump" --region "${BACKUP_REGION}"
+              envFrom: [{ secretRef: { name: dr-config } }]
+              env: [{ name: HOME, value: /tmp }]
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 250m, memory: 256Mi }
+              securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+              volumeMounts:
+                - { name: backup, mountPath: /backup }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - { name: backup, emptyDir: { sizeLimit: 1Gi } }
+            - { name: tmp, emptyDir: {} }

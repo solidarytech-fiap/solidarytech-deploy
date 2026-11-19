@@ -1,0 +1,32 @@
+# Backups do estado do cluster (manifests, secrets sincronizados, configmaps)
+# para s3://solidarytech-dr-backups-<account>/velero em us-west-2.
+#
+# - solidarytech-hourly : namespace critico, a cada hora, retencao 72h
+# - cluster-daily       : cluster inteiro (exceto ruido), diario, retencao 7d
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: solidarytech-hourly
+  namespace: velero
+spec:
+  schedule: "0 * * * *"
+  useOwnerReferencesInBackup: false
+  template:
+    includedNamespaces: [solidarytech]
+    snapshotVolumes: false
+    ttl: 72h0m0s
+    labelSelector: {}
+---
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: cluster-daily
+  namespace: velero
+spec:
+  schedule: "30 3 * * *"
+  useOwnerReferencesInBackup: false
+  template:
+    includedNamespaces: ["*"]
+    excludedNamespaces: [kube-node-lease, kube-public]
+    snapshotVolumes: false
+    ttl: 168h0m0s

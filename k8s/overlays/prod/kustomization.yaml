@@ -1,0 +1,47 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+
+# ------------------------------------------------------------------
+# FinOps - Rightsizing (via GitOps)
+# A base declara os valores iniciais (superdimensionados, sem dados).
+# Os patches abaixo aplicam os valores ajustados apos analise das
+# metricas reais de CPU/memoria (scripts/rightsizing-report.sh no repo
+# solidarytech-app; metodologia em docs/finops.md).
+# Regra: request = p95 de uso em 7 dias x 1.3 ; limit memoria = pico x 1.5
+# ------------------------------------------------------------------
+patches:
+  - target: { kind: Deployment, name: donation-service }
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests: { cpu: 50m, memory: 48Mi }
+          limits: { cpu: 300m, memory: 128Mi }
+  - target: { kind: Deployment, name: ngo-service }
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests: { cpu: 30m, memory: 128Mi }
+          limits: { cpu: 300m, memory: 256Mi }
+  - target: { kind: Deployment, name: volunteer-service }
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests: { cpu: 30m, memory: 128Mi }
+          limits: { cpu: 300m, memory: 256Mi }
+
+# Atualizado automaticamente pelo CI (reusable-gitops.yml) com o SHA do commit.
+images:
+  - name: donation-service
+    newName: 211125582187.dkr.ecr.us-east-1.amazonaws.com/donation-service
+    newTag: bootstrap
+  - name: ngo-service
+    newName: 211125582187.dkr.ecr.us-east-1.amazonaws.com/ngo-service
+    newTag: bootstrap
+  - name: volunteer-service
+    newName: 211125582187.dkr.ecr.us-east-1.amazonaws.com/volunteer-service
+    newTag: bootstrap

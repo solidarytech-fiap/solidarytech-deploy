@@ -1,0 +1,880 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-slo-donation
+  labels:
+    grafana_dashboard: '1'
+  annotations:
+    grafana_folder: SolidaryTech
+data:
+  slo-donation.json: |
+    {
+      "uid": "solidarytech-slo",
+      "title": "SolidaryTech - SLO e Error Budget (donation-service)",
+      "tags": [
+        "solidarytech",
+        "slo",
+        "sre"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "30s",
+      "time": {
+        "from": "now-24h",
+        "to": "now"
+      },
+      "editable": true,
+      "templating": {
+        "list": []
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "text",
+          "title": "",
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 6
+          },
+          "options": {
+            "mode": "markdown",
+            "content": "## donation-service - SLOs (janela de 30 dias)\n| SLI | Definicao | SLO | Error budget |\n|---|---|---|---|\n| **Disponibilidade** | requisicoes em `/donations` sem 5xx / total | **99,9%** | 0,1% (~43 min/mes) |\n| **Latencia** | requisicoes em `/donations` com resposta < 300 ms / total | **95%** | 5% das requisicoes |\nAlertas: multi-burn-rate (14,4x/1h, 6x/6h -> page; 3x/1d, 1x/3d -> ticket). Definicao formal: `docs/sre.md`."
+          }
+        },
+        {
+          "id": 2,
+          "type": "row",
+          "title": "Disponibilidade (SLO 99,9%)",
+          "collapsed": false,
+          "gridPos": {
+            "x": 0,
+            "y": 6,
+            "w": 24,
+            "h": 1
+          },
+          "panels": []
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "SLI disponibilidade (30d)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 7,
+            "w": 6,
+            "h": 5
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "decimals": 3,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 0.999
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "value"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "1 - slo:donation_availability:error_ratio_rate30d",
+              "instant": true,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "gauge",
+          "title": "Error budget restante",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 7,
+            "w": 6,
+            "h": 5
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "decimals": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 0.25
+                  },
+                  {
+                    "color": "green",
+                    "value": 0.5
+                  }
+                ]
+              },
+              "min": 0,
+              "max": 1
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "showThresholdMarkers": true
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "slo:donation_availability:error_budget_remaining",
+              "instant": true,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "Burn rate 1h",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 7,
+            "w": 6,
+            "h": 5
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 14.4
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "value"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "slo:donation_availability:burn_rate1h",
+              "instant": true,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "stat",
+          "title": "Burn rate 6h",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 7,
+            "w": 6,
+            "h": 5
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 6
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "value"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "slo:donation_availability:burn_rate6h",
+              "instant": true,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Error budget restante ao longo do tempo",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 12,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "thresholdsStyle": {
+                  "mode": "line"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 0
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "slo:donation_availability:error_budget_remaining",
+              "legendFormat": "budget restante",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Taxa de erro por janela vs limiar do SLO",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 12,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "slo:donation_availability:error_ratio_rate5m",
+              "legendFormat": "5m",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "slo:donation_availability:error_ratio_rate1h",
+              "legendFormat": "1h",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "C",
+              "expr": "slo:donation_availability:error_ratio_rate6h",
+              "legendFormat": "6h",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "D",
+              "expr": "vector(0.001)",
+              "legendFormat": "limiar SLO (0,1%)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "row",
+          "title": "Latencia (SLO 95% < 300ms)",
+          "collapsed": false,
+          "gridPos": {
+            "x": 0,
+            "y": 20,
+            "w": 24,
+            "h": 1
+          },
+          "panels": []
+        },
+        {
+          "id": 10,
+          "type": "stat",
+          "title": "SLI latencia (30d)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 21,
+            "w": 6,
+            "h": 5
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 0.95
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "value"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "1 - slo:donation_latency:error_ratio_rate30d",
+              "instant": true,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "type": "gauge",
+          "title": "Error budget restante",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 21,
+            "w": 6,
+            "h": 5
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "decimals": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 0.25
+                  },
+                  {
+                    "color": "green",
+                    "value": 0.5
+                  }
+                ]
+              },
+              "min": 0,
+              "max": 1
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "showThresholdMarkers": true
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "slo:donation_latency:error_budget_remaining",
+              "instant": true,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "type": "stat",
+          "title": "Burn rate 1h",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 21,
+            "w": 6,
+            "h": 5
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 14.4
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "value"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "slo:donation_latency:burn_rate1h",
+              "instant": true,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "type": "stat",
+          "title": "Burn rate 6h",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 21,
+            "w": 6,
+            "h": 5
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 1
+                  },
+                  {
+                    "color": "red",
+                    "value": 6
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "value"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "slo:donation_latency:burn_rate6h",
+              "instant": true,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "type": "timeseries",
+          "title": "Error budget restante ao longo do tempo",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 26,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "thresholdsStyle": {
+                  "mode": "line"
+                }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 0
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "slo:donation_latency:error_budget_remaining",
+              "legendFormat": "budget restante",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 15,
+          "type": "timeseries",
+          "title": "% de requisicoes lentas (>300ms) por janela",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 26,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "slo:donation_latency:error_ratio_rate5m",
+              "legendFormat": "5m",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "slo:donation_latency:error_ratio_rate1h",
+              "legendFormat": "1h",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "C",
+              "expr": "slo:donation_latency:error_ratio_rate6h",
+              "legendFormat": "6h",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "D",
+              "expr": "vector(0.05)",
+              "legendFormat": "limiar SLO (5%)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 16,
+          "type": "row",
+          "title": "Alertas de SLO",
+          "collapsed": false,
+          "gridPos": {
+            "x": 0,
+            "y": 34,
+            "w": 24,
+            "h": 1
+          },
+          "panels": []
+        },
+        {
+          "id": 17,
+          "type": "alertlist",
+          "title": "Alertas de SLO ativos",
+          "gridPos": {
+            "x": 0,
+            "y": 35,
+            "w": 24,
+            "h": 6
+          },
+          "options": {
+            "alertName": "DonationSLO",
+            "showOptions": "current",
+            "maxItems": 20,
+            "stateFilter": {
+              "firing": true,
+              "pending": true
+            },
+            "alertInstanceLabelFilter": "",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            }
+          }
+        }
+      ],
+      "annotations": {
+        "list": []
+      }
+    }
